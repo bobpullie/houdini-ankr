@@ -17,6 +17,7 @@ import yaml
 
 from . import __version__
 from .commands import install_to_houdini as _install_to_houdini
+from .commands import track as _track
 from .config import CONFIG_FILENAME, AnkrConfig, load_config
 from .topology import Severity, check_all_invariants
 
@@ -28,6 +29,7 @@ app = typer.Typer(
 )
 
 _install_to_houdini.register(app)
+_track.register(app)
 
 
 # ---------------------------------------------------------------------------
