@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "houdini-ankr"
+version = "0.1.0a0"
+description = "ANKR (Agent Network Knowledge Reader) — canonical Houdini network knowledge-base plugin for Claude Code agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "bobpullie" }]
+keywords = ["houdini", "claude-code", "knowledge-base", "ankr", "agent", "plugin"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+dependencies = [
+    "pydantic>=2.5",
+    "PyYAML>=6.0",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.5"]
+
+[project.scripts]
+ankr = "ankr.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/bobpullie/houdini-ankr"
+Issues = "https://github.com/bobpullie/houdini-ankr/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ankr"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
