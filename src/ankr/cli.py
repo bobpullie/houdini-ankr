@@ -16,6 +16,7 @@ import typer
 import yaml
 
 from . import __version__
+from .commands import install_to_houdini as _install_to_houdini
 from .config import CONFIG_FILENAME, AnkrConfig, load_config
 from .topology import Severity, check_all_invariants
 
@@ -25,6 +26,8 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+_install_to_houdini.register(app)
 
 
 # ---------------------------------------------------------------------------
