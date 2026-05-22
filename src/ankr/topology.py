@@ -324,27 +324,109 @@ def check_i9_path_layout(cfg: AnkrConfig, scan: ScanResult) -> list[Violation]:
 
 
 def check_i4_segment_count_match(scan: ScanResult) -> list[Violation]:
-    """I4 — skeleton frontmatter segment count matches actual segment files. (stub)"""
-    return []
+    """I4 — skeleton.md `segment_count` frontmatter matches actual segment files.
+
+    Only enforced when the skeleton declares `segment_count`. Skeletons without
+    the field skip the check (legacy / partial KB units).
+    """
+    out: list[Violation] = []
+    for u in scan.units:
+        if u.skeleton is None:
+            continue
+        fm = read_frontmatter(u.skeleton)
+        declared = fm.get("segment_count")
+        if declared is None:
+            continue
+        if not isinstance(declared, int) or declared != len(u.segments):
+            out.append(
+                Violation(
+                    "I4",
+                    Severity.CRITICAL,
+                    u.skeleton,
+                    f"skeleton segment_count={declared!r} but {len(u.segments)} segment files found",
+                )
+            )
+    return out
 
 
 def check_i5_file_size_caps(scan: ScanResult) -> list[Violation]:
-    """I5 — file sizes within MAX_LINES caps. (stub)"""
-    return []
+    """I5 — file sizes within MAX_LINES soft caps (warning only)."""
+    out: list[Violation] = []
+    for u in scan.units:
+        for attr, cap_key in (("card", "card"), ("skeleton", "skeleton"),
+                              ("dataflow", "dataflow"), ("used_by", "used_by")):
+            f = getattr(u, attr)
+            if f is None:
+                continue
+            n = count_lines(f)
+            cap = MAX_LINES[cap_key]
+            if n > cap:
+                out.append(
+                    Violation("I5", Severity.WARNING, f, f"{cap_key} has {n} lines (cap {cap})")
+                )
+        cap_seg = MAX_LINES["segment"]
+        for seg in u.segments:
+            n = count_lines(seg)
+            if n > cap_seg:
+                out.append(
+                    Violation("I5", Severity.WARNING, seg, f"segment has {n} lines (cap {cap_seg})")
+                )
+        if u.manifest is not None:
+            n = count_lines(u.manifest)
+            if n > MANIFEST_WARN_LINES:
+                out.append(
+                    Violation(
+                        "I5",
+                        Severity.WARNING,
+                        u.manifest,
+                        f"manifest has {n} lines (threshold {MANIFEST_WARN_LINES})",
+                    )
+                )
+    return out
 
 
 def check_i6_dataflow_cross_refs(scan: ScanResult) -> list[Violation]:
-    """I6 — dataflow.md attribs/groups appear in at least one segment. (stub)"""
+    """I6 — dataflow.md cited attribs/groups appear in at least one segment.
+
+    Deferred: requires a stable name-extraction format for dataflow.md (table
+    columns? frontmatter list?) that the tracker hasn't standardized yet.
+    Returning [] keeps the slot reserved without false positives.
+    """
     return []
 
 
 def check_i7_manifest_segments_match(scan: ScanResult) -> list[Violation]:
-    """I7 — manifest.yaml internal_segments matches segments/ for HDAs. (stub)"""
-    return []
+    """I7 — HDA manifest.yaml `internal_segments` list length matches segments/."""
+    out: list[Violation] = []
+    for u in scan.units:
+        if u.kind != "hda" or u.manifest is None:
+            continue
+        try:
+            data = yaml.safe_load(u.manifest.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            continue  # malformed manifest is its own issue, not ours
+        declared = data.get("internal_segments")
+        if declared is None:
+            continue
+        if not isinstance(declared, list) or len(declared) != len(u.segments):
+            n = len(declared) if isinstance(declared, list) else repr(declared)
+            out.append(
+                Violation(
+                    "I7",
+                    Severity.CRITICAL,
+                    u.manifest,
+                    f"manifest internal_segments count={n} but {len(u.segments)} segment files found",
+                )
+            )
+    return out
 
 
 def check_i10_used_by_resolve(scan: ScanResult) -> list[Violation]:
-    """I10 — used_by.md cited hip paths resolve. (stub)"""
+    """I10 — used_by.md cited hip paths resolve.
+
+    Deferred: requires git-history awareness to distinguish "stale link"
+    from "valid but renamed". Will land alongside the Phase 2 drift hook.
+    """
     return []
 
 

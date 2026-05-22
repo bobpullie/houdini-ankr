@@ -9,11 +9,15 @@ import pytest
 from ankr import paths
 from ankr.config import AnkrConfig
 from ankr.topology import (
+    MAX_LINES,
     Severity,
     check_all_invariants,
     check_i1_skeleton_present,
     check_i2_no_orphan_segments,
     check_i3_manifest_uniqueness,
+    check_i4_segment_count_match,
+    check_i5_file_size_caps,
+    check_i7_manifest_segments_match,
     check_i8_required_frontmatter,
     check_i9_path_layout,
     read_frontmatter,
@@ -307,3 +311,131 @@ def test_check_handles_missing_docs_root(tmp_path: Path) -> None:
     scan, violations = check_all_invariants(cfg)
     assert scan.units == []
     assert violations == []
+
+
+# ---------------------------------------------------------------------------
+# I4 — segment_count match
+# ---------------------------------------------------------------------------
+
+
+SKELETON_WITH_COUNT = """\
+---
+endnode: e
+last_sync: 2026-05-22T00:00:00Z
+segment_count: {n}
+---
+
+body
+"""
+
+
+def test_i4_passes_when_count_matches(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    docs = paths.docs_root(cfg)
+    root = docs / "Hip" / "e"
+    _write(root / "skeleton.md", SKELETON_WITH_COUNT.format(n=2))
+    _write(root / "segments" / "seg_01_a.md", SEGMENT_GOOD)
+    _write(root / "segments" / "seg_02_b.md", SEGMENT_GOOD.replace("seg_01_input", "seg_02_b"))
+    scan = scan_kb(cfg)
+    assert check_i4_segment_count_match(scan) == []
+
+
+def test_i4_flags_count_mismatch(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    docs = paths.docs_root(cfg)
+    root = docs / "Hip" / "e"
+    _write(root / "skeleton.md", SKELETON_WITH_COUNT.format(n=5))
+    _write(root / "segments" / "seg_01_a.md", SEGMENT_GOOD)
+    scan = scan_kb(cfg)
+    violations = check_i4_segment_count_match(scan)
+    assert len(violations) == 1
+    assert violations[0].invariant_id == "I4"
+    assert "5" in violations[0].message and "1" in violations[0].message
+
+
+def test_i4_skips_when_count_not_declared(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    _make_hip_endnode(paths.docs_root(cfg), "h", "e", n_segments=3)
+    scan = scan_kb(cfg)
+    # SKELETON_GOOD doesn't declare segment_count → I4 should not fire.
+    assert check_i4_segment_count_match(scan) == []
+
+
+# ---------------------------------------------------------------------------
+# I5 — file size caps
+# ---------------------------------------------------------------------------
+
+
+def test_i5_passes_for_small_files(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    _make_hip_endnode(paths.docs_root(cfg), "h", "e", n_segments=1)
+    scan = scan_kb(cfg)
+    assert check_i5_file_size_caps(scan) == []
+
+
+def test_i5_flags_oversize_skeleton(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    docs = paths.docs_root(cfg)
+    root = docs / "Hip" / "e"
+    body = "\n".join([f"line {i}" for i in range(MAX_LINES["skeleton"] + 50)])
+    _write(root / "skeleton.md", f"---\nendnode: e\nlast_sync: x\n---\n{body}\n")
+    scan = scan_kb(cfg)
+    violations = check_i5_file_size_caps(scan)
+    assert any(v.invariant_id == "I5" and v.severity == Severity.WARNING for v in violations)
+
+
+def test_i5_flags_oversize_segment(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    docs = paths.docs_root(cfg)
+    root = docs / "Hip" / "e"
+    _write(root / "skeleton.md", SKELETON_GOOD)
+    body = "\n".join([f"line {i}" for i in range(MAX_LINES["segment"] + 50)])
+    _write(root / "segments" / "seg_01_big.md", f"---\nsegment_id: seg_01_big\n---\n{body}\n")
+    scan = scan_kb(cfg)
+    violations = check_i5_file_size_caps(scan)
+    assert any(v.invariant_id == "I5" and "segment has" in v.message for v in violations)
+
+
+# ---------------------------------------------------------------------------
+# I7 — manifest internal_segments count match
+# ---------------------------------------------------------------------------
+
+
+def test_i7_passes_when_manifest_matches(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    docs = paths.docs_root(cfg)
+    root = docs / "custom_hda" / "foo__1.0"
+    _write(root / "skeleton.md", SKELETON_GOOD)
+    _write(root / "segments" / "seg_01_a.md", SEGMENT_GOOD)
+    _write(root / "segments" / "seg_02_b.md", SEGMENT_GOOD.replace("seg_01_input", "seg_02_b"))
+    _write(
+        root / "manifest.yaml",
+        "kind: hda\ninternal_segments:\n  - id: seg_01_a\n  - id: seg_02_b\n",
+    )
+    scan = scan_kb(cfg)
+    assert check_i7_manifest_segments_match(scan) == []
+
+
+def test_i7_flags_manifest_count_mismatch(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    docs = paths.docs_root(cfg)
+    root = docs / "custom_hda" / "bar__1.0"
+    _write(root / "skeleton.md", SKELETON_GOOD)
+    _write(root / "segments" / "seg_01_a.md", SEGMENT_GOOD)
+    _write(
+        root / "manifest.yaml",
+        "kind: hda\ninternal_segments:\n  - id: seg_01_a\n  - id: seg_02_phantom\n  - id: seg_03_phantom\n",
+    )
+    scan = scan_kb(cfg)
+    violations = check_i7_manifest_segments_match(scan)
+    assert len(violations) == 1
+    assert violations[0].invariant_id == "I7"
+    assert violations[0].severity == Severity.CRITICAL
+
+
+def test_i7_skips_when_internal_segments_absent(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    docs = paths.docs_root(cfg)
+    _make_hda(docs, "baz__1.0", n_segments=2, with_manifest=True)  # manifest lacks internal_segments
+    scan = scan_kb(cfg)
+    assert check_i7_manifest_segments_match(scan) == []
