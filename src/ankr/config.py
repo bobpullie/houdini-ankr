@@ -40,7 +40,14 @@ class DocsConfig(BaseModel):
         default=Path("docs/ankr"),
         description="KB output root. Relative paths are resolved against project.root.",
     )
-    hip_subdir: str = "hip"
+    hip_subdir: str = Field(
+        default="",
+        description=(
+            "Intermediate subdir for hip endnodes under docs.root. "
+            "Empty string (default) = endnodes live directly at <docs.root>/<hipname>/<endnode>/, "
+            "matching legacy ANKR layout."
+        ),
+    )
     hda_subdir: str = "custom_hda"
     deadflow_reports_subdir: str = "deadflow_reports"
     logs_subdir: str = "logs"

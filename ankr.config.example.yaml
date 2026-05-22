@@ -14,7 +14,7 @@ project:
 
 docs:
   root: docs/ankr                 # relative => resolved against project.root
-  hip_subdir: hip
+  hip_subdir: ""                  # "" = hip endnodes live at <docs.root>/<hipname>/<endnode>/ (legacy ANKR layout)
   hda_subdir: custom_hda
   deadflow_reports_subdir: deadflow_reports
   logs_subdir: logs

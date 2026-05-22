@@ -73,11 +73,21 @@ def test_init_rejects_missing_project_root(runner: CliRunner, tmp_path: Path) ->
     assert result.exit_code == 2
 
 
-def test_check_stub_loads_config(runner: CliRunner, tmp_path: Path) -> None:
+def test_check_on_empty_kb_exits_zero(runner: CliRunner, tmp_path: Path) -> None:
     runner.invoke(app, ["init", "--project-root", str(tmp_path), "--name", "p", "--no-interactive"])
     result = runner.invoke(app, ["check", "--config", str(tmp_path / CONFIG_FILENAME)])
     assert result.exit_code == 0
-    assert "Phase 1 feature" in result.stdout
+    assert "no violations" in result.stdout
+
+
+def test_check_json_output(runner: CliRunner, tmp_path: Path) -> None:
+    runner.invoke(app, ["init", "--project-root", str(tmp_path), "--name", "p", "--no-interactive"])
+    result = runner.invoke(app, ["check", "--config", str(tmp_path / CONFIG_FILENAME), "--json"])
+    assert result.exit_code == 0
+    import json as _json
+    payload = _json.loads(result.stdout)
+    assert payload["summary"]["critical"] == 0
+    assert payload["units"] == []
 
 
 def test_init_with_houdini_version_hint(runner: CliRunner, tmp_path: Path) -> None:

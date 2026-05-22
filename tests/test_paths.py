@@ -30,10 +30,16 @@ def test_docs_root_absolute_override(tmp_path: Path) -> None:
 
 def test_subdir_helpers(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
-    assert paths.hip_docs_dir(cfg) == tmp_path / "docs" / "ankr" / "hip"
+    # hip_subdir default "" — hip endnodes live at <docs_root>/<hipname>/<endnode>/
+    assert paths.hip_docs_dir(cfg) == tmp_path / "docs" / "ankr"
     assert paths.hda_docs_dir(cfg) == tmp_path / "docs" / "ankr" / "custom_hda"
     assert paths.deadflow_reports_dir(cfg) == tmp_path / "docs" / "ankr" / "deadflow_reports"
     assert paths.docs_logs_dir(cfg) == tmp_path / "docs" / "ankr" / "logs"
+
+
+def test_hip_subdir_explicit(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path, docs={"root": "docs/ankr", "hip_subdir": "hip"})
+    assert paths.hip_docs_dir(cfg) == tmp_path / "docs" / "ankr" / "hip"
 
 
 def test_logs_dir_default(tmp_path: Path) -> None:
@@ -43,7 +49,8 @@ def test_logs_dir_default(tmp_path: Path) -> None:
 
 def test_endnode_doc_dir(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
-    assert paths.endnode_doc_dir(cfg, "AI_EndNode") == tmp_path / "docs" / "ankr" / "hip" / "AI_EndNode"
+    # default hip_subdir="" places endnode under <docs_root>/<endnode>/
+    assert paths.endnode_doc_dir(cfg, "AI_EndNode") == tmp_path / "docs" / "ankr" / "AI_EndNode"
 
 
 def test_hda_doc_dir(tmp_path: Path) -> None:

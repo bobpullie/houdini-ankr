@@ -17,6 +17,7 @@ import yaml
 
 from . import __version__
 from .config import CONFIG_FILENAME, AnkrConfig, load_config
+from .topology import Severity, check_all_invariants
 
 app = typer.Typer(
     name="ankr",
@@ -63,7 +64,7 @@ def _build_config_dict(
         },
         "docs": {
             "root": docs_root,
-            "hip_subdir": "hip",
+            "hip_subdir": "",
             "hda_subdir": "custom_hda",
             "deadflow_reports_subdir": "deadflow_reports",
             "logs_subdir": "logs",
@@ -209,15 +210,58 @@ def check(
         "-c",
         help="Path to ankr.config.yaml. If omitted, walks upward from cwd.",
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine-readable JSON instead of human-readable summary.",
+    ),
 ) -> None:
-    """Run topology invariants I1~I10 and drift checks (Phase 1, not yet implemented)."""
+    """Run topology invariants I1~I10 over the configured KB.
+
+    Exit code:
+      0  no critical violations
+      1  one or more critical violations
+
+    Warnings do not change exit code.
+    """
+    import json as _json
+
     cfg = load_config(config_path)
-    typer.secho(
-        f"`ankr check` is a Phase 1 feature (loaded config for project '{cfg.project.name}' at {cfg.project.root}).",
-        fg=typer.colors.YELLOW,
-    )
-    typer.echo("Implementation arrives once topology.py is ported. Exiting cleanly.")
-    raise typer.Exit(code=0)
+    scan, violations = check_all_invariants(cfg)
+
+    critical = [v for v in violations if v.severity == Severity.CRITICAL]
+    warnings = [v for v in violations if v.severity == Severity.WARNING]
+
+    if json_output:
+        typer.echo(
+            _json.dumps(
+                {
+                    "docs_root": str(scan.docs_root),
+                    "units": [{"kind": u.kind, "root": str(u.root)} for u in scan.units],
+                    "violations": [v.to_dict() for v in violations],
+                    "summary": {
+                        "critical": len(critical),
+                        "warning": len(warnings),
+                        "units": len(scan.units),
+                    },
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    else:
+        typer.echo(f"docs_root: {scan.docs_root}")
+        typer.echo(f"units:     {len(scan.units)} ({sum(1 for u in scan.units if u.kind == 'hip')} hip, "
+                   f"{sum(1 for u in scan.units if u.kind == 'hda')} hda)")
+        if not violations:
+            typer.secho("✓ no violations", fg=typer.colors.GREEN)
+        else:
+            for v in violations:
+                color = typer.colors.RED if v.severity == Severity.CRITICAL else typer.colors.YELLOW
+                typer.secho(f"  [{v.invariant_id}] {v.severity.value}: {v.path} — {v.message}", fg=color)
+            typer.echo(f"\nsummary: {len(critical)} critical, {len(warnings)} warning")
+
+    raise typer.Exit(code=1 if critical else 0)
 
 
 # ---------------------------------------------------------------------------
