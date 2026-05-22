@@ -26,8 +26,8 @@ For every tracked endnode, ANKR produces:
 
 ```
 docs/ankr/
-└── <hipname>/                       # e.g. KJI_MysticIsland_Procedural_Villarge/
-    └── <endnode>/                   # e.g. AI_EndNode/
+└── <hipname>/                       # e.g. MyHipScene/
+    └── <endnode>/                   # e.g. OUT_endnode/
         ├── card.md                  # L0 — one-paragraph executive summary
         ├── skeleton.md              # L1 — chain overview, segment index, frontmatter
         ├── dataflow.md              # L1.5 — attribute/group lifecycle across segments
@@ -43,7 +43,7 @@ And separately, for every custom HDA encountered:
 
 ```
 docs/ankr/custom_hda/
-└── <namespace>__<name>__<version>/   # e.g. bluei__KJI_Curve_to_ModuleAssembler__2.2/
+└── <namespace>__<name>__<version>/   # e.g. mystudio__MyCustomHDA__1.0/
     ├── card.md  skeleton.md  dataflow.md  used_by.md
     ├── segments/seg_*.md
     └── manifest.yaml                 # required (I3 invariant)
@@ -152,8 +152,8 @@ used_by:       <K>
   git commit -m "..."
 
 --- HDA cache report ---
-  ✓ bluei::MyCustomHDA::1.0 [fresh]
-  ⚠ bluei::OtherHDA::2.1 [stale]
+  ✓ mystudio::MyCustomHDA::1.0 [fresh]
+  ⚠ mystudio::OtherHDA::2.1 [stale]
 ```
 
 ### 5. Verify topology
@@ -247,10 +247,9 @@ Use `--json` for machine-readable output suitable for CI gating.
 
 ## Design principles (load-bearing — do not violate)
 
-1. **Zero hardcoded paths.** Every path resolves through `ankr.config.yaml`. The plugin runs on any OS, any user, any project layout. No `C:/...` or `~/...` literals in code.
-2. **Zero coupling to external memory systems.** ANKR is self-contained. An optional `RuleStore` Protocol exists for opt-in integration with a project's own memory system, but the default is `NullRuleStore` and nothing requires wiring.
-3. **Read-only on Houdini scenes.** Never `save_scene`, never `execute_python` that mutates nodes, never enter vendor HDAs (`sidefx::`, `labs::`, `kinefx::`). The one historical carve-out is `walk_hda_definition`, which restores Houdini's hip-dirty flag after introspection so the scene state is bit-identical to its pre-call form.
-4. **Single CLI surface: `ankr <subcommand>`.** All workflows go through one entrypoint (rolled out incrementally Phase 1+).
+1. **Zero coupling to external memory systems.** ANKR is self-contained. An optional `RuleStore` Protocol exists for opt-in integration with a project's own memory system, but the default is `NullRuleStore` and nothing requires wiring.
+2. **Read-only on Houdini scenes.** Never `save_scene`, never `execute_python` that mutates nodes, never enter vendor HDAs (`sidefx::`, `labs::`, `kinefx::`). The one historical carve-out is `walk_hda_definition`, which restores Houdini's hip-dirty flag after introspection so the scene state is bit-identical to its pre-call form.
+3. **Single CLI surface: `ankr <subcommand>`.** All workflows go through one entrypoint (rolled out incrementally Phase 1+).
 
 ---
 
@@ -289,11 +288,7 @@ The current canonical port is **27 .py files, 271/271 tests green** as of commit
 
 ## Status & roadmap
 
-ANKR ports an in-tree predecessor (`tools/houdini_graph/`) into a canonical package. The migration is phased; current public surface and gates are tracked in the parent project's atlas:
-
-`E:/01_houdiniAgent/handover_doc/task_atlas/active/ankr_canonical_atlas.md`
-
-The atlas — not this README — is the source of truth for "where are we and where are we going". This README covers stable user-facing behavior only.
+ANKR ports an in-tree predecessor into a canonical package. The migration is phased; current public surface and gates are tracked in the parent project's task atlas, which is the source of truth for "where are we and where are we going". This README covers stable user-facing behavior only.
 
 ---
 
@@ -317,8 +312,8 @@ MIT.
 
 ```
 docs/ankr/
-└── <hipname>/                       # 예: KJI_MysticIsland_Procedural_Villarge/
-    └── <endnode>/                   # 예: AI_EndNode/
+└── <hipname>/                       # 예: MyHipScene/
+    └── <endnode>/                   # 예: OUT_endnode/
         ├── card.md                  # L0 — 한 단락 요약
         ├── skeleton.md              # L1 — 체인 개요 + 세그먼트 인덱스 + frontmatter
         ├── dataflow.md              # L1.5 — 세그먼트 간 attribute/group 흐름
@@ -451,18 +446,13 @@ CI 게이팅 용도로는 `--json` 출력 추천.
 
 ## 설계 원칙 (절대 위반 금지)
 
-1. **하드코딩 경로 0개.** 모든 경로는 `ankr.config.yaml`을 통해 해결. 코드 안에 `C:/...`, `~/...` 리터럴 금지.
-2. **외부 메모리 시스템과의 결합 0.** ANKR은 독립적. 옵션 `RuleStore` Protocol은 프로젝트별 메모리 시스템과의 통합용 훅이지만, 기본은 `NullRuleStore`로 아무 연결도 필요 없음.
-3. **Houdini 씬에 대해 읽기 전용.** `save_scene` 금지, 노드를 변경하는 `execute_python` 금지, 벤더 HDA(`sidefx::`, `labs::`, `kinefx::`) 내부 진입 금지. 역사적 단일 예외 `walk_hda_definition`은 introspection 후 hip-dirty 플래그를 복원해 호출 전후 씬 상태를 비트 동일하게 보존.
-4. **단일 CLI 진입점: `ankr <subcommand>`.** 모든 워크플로우는 하나의 entrypoint를 거침 (Phase 1+에 걸쳐 점진 출시).
+1. **외부 메모리 시스템과의 결합 0.** ANKR은 독립적. 옵션 `RuleStore` Protocol은 프로젝트별 메모리 시스템과의 통합용 훅이지만, 기본은 `NullRuleStore`로 아무 연결도 필요 없음.
+2. **Houdini 씬에 대해 읽기 전용.** `save_scene` 금지, 노드를 변경하는 `execute_python` 금지, 벤더 HDA(`sidefx::`, `labs::`, `kinefx::`) 내부 진입 금지. 역사적 단일 예외 `walk_hda_definition`은 introspection 후 hip-dirty 플래그를 복원해 호출 전후 씬 상태를 비트 동일하게 보존.
+3. **단일 CLI 진입점: `ankr <subcommand>`.** 모든 워크플로우는 하나의 entrypoint를 거침 (Phase 1+에 걸쳐 점진 출시).
 
 ## 상태 & 로드맵
 
-ANKR는 in-tree 전신(`tools/houdini_graph/`)을 캐노니컬 패키지로 포팅 중. 마이그레이션은 단계적으로 진행되며, 현재 공개 표면과 게이트는 상위 프로젝트의 atlas에서 추적됩니다:
-
-`E:/01_houdiniAgent/handover_doc/task_atlas/active/ankr_canonical_atlas.md`
-
-이 README가 아닌 atlas가 "지금 어디에 있고 어디로 가는가"의 단일 진실 원천입니다. 이 README는 안정된 사용자 표면 동작만 다룹니다.
+ANKR는 in-tree 전신을 캐노니컬 패키지로 포팅 중. 마이그레이션은 단계적으로 진행되며, 현재 공개 표면과 게이트는 상위 프로젝트의 task atlas에서 추적됩니다 — atlas가 "지금 어디에 있고 어디로 가는가"의 단일 진실 원천이며, 이 README는 안정된 사용자 표면 동작만 다룹니다.
 
 ## 라이선스
 
