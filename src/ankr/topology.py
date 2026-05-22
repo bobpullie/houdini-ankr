@@ -231,12 +231,18 @@ def check_i2_no_orphan_segments(scan: ScanResult) -> list[Violation]:
 
 
 def check_i3_manifest_uniqueness(scan: ScanResult) -> list[Violation]:
-    """I3 — at most one manifest.yaml per unit. (Missing is allowed for hip; HDA expected.)"""
+    """I3 — manifest presence/uniqueness per unit.
+
+    Uniqueness ("at most one manifest.yaml") is enforced trivially by the
+    filesystem: a directory cannot hold two files with the same name. What
+    this checker *actually* asserts is the HDA-only presence requirement:
+    every HDA unit must carry a `manifest.yaml`. Hip units are allowed to
+    omit it (manifest may live at hipname level instead).
+    """
     out: list[Violation] = []
     for u in scan.units:
         if u.kind == "hda" and u.manifest is None:
             out.append(Violation("I3", Severity.CRITICAL, u.root, "HDA unit missing manifest.yaml"))
-        # multiplicity is enforced by filesystem (only one file can have that name)
     return out
 
 
@@ -306,7 +312,11 @@ def check_i9_path_layout(cfg: AnkrConfig, scan: ScanResult) -> list[Violation]:
                     )
                 )
         else:  # hip
-            # hip endnode dir; if hip_subdir set, expect that prefix; else any depth ok except under hda_subdir
+            # Hip endnode dir. Two configurations are valid:
+            #   (a) hip_subdir set → path must be `<hip_subdir>/<hipname>/<endnode>/` (depth 3).
+            #   (b) hip_subdir == "" → path must be `<hipname>/<endnode>/` (depth 2),
+            #       and the first part must NOT be hda_subdir (already filtered by the
+            #       scanner, but re-checked here for defense-in-depth).
             if cfg.docs.hip_subdir:
                 if not parts or parts[0] != cfg.docs.hip_subdir:
                     out.append(
@@ -315,6 +325,36 @@ def check_i9_path_layout(cfg: AnkrConfig, scan: ScanResult) -> list[Violation]:
                             Severity.CRITICAL,
                             u.root,
                             f"hip endnode not under '{cfg.docs.hip_subdir}/'",
+                        )
+                    )
+                elif len(parts) != 3:
+                    out.append(
+                        Violation(
+                            "I9",
+                            Severity.CRITICAL,
+                            u.root,
+                            f"hip endnode at unexpected depth (expected "
+                            f"<hip_subdir>/<hipname>/<endnode>/, got {rel})",
+                        )
+                    )
+            else:
+                if parts and parts[0] == cfg.docs.hda_subdir:
+                    out.append(
+                        Violation(
+                            "I9",
+                            Severity.CRITICAL,
+                            u.root,
+                            f"hip endnode wrongly nested under hda_subdir '{cfg.docs.hda_subdir}/'",
+                        )
+                    )
+                elif len(parts) != 2:
+                    out.append(
+                        Violation(
+                            "I9",
+                            Severity.CRITICAL,
+                            u.root,
+                            f"hip endnode at unexpected depth (expected "
+                            f"<hipname>/<endnode>/ when hip_subdir is empty, got {rel})",
                         )
                     )
     return out

@@ -15,9 +15,16 @@ the config default and behavior is unchanged.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
+
+
+# Markdown table separator cells are made up of `-`, `:`, and whitespace
+# (e.g. `---`, `:---`, `:---:`, `---:`). Length 1+ to avoid matching the
+# empty leading cell of a `| col |` row.
+_SEPARATOR_CELL_RE = re.compile(r"^[\s:-]+$")
 
 
 def extract_attrib_lifecycle(enriched: list[dict]) -> dict:
@@ -160,10 +167,15 @@ def parse_consumed_from_kb(docs_root, hda_safe_id: str) -> dict | None:
         for line in block.splitlines()[1:]:  # skip heading
             if line.startswith("## ") and rows:
                 break
-            if line.startswith("|") and not line.startswith("|--"):
-                cells = [c.strip() for c in line.strip().strip("|").split("|")]
-                if cells and cells[0] and cells[0].lower() not in ("attrib", "group"):
-                    rows.append(cells)
+            if not line.startswith("|"):
+                continue
+            # Robust markdown table separator detection. A separator row
+            # consists of cells made entirely of `-`, `:`, and whitespace.
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if cells and all(_SEPARATOR_CELL_RE.match(c) for c in cells if c):
+                continue
+            if cells and cells[0] and cells[0].lower() not in ("attrib", "group"):
+                rows.append(cells)
         return rows
 
     attribs: set[str] = set()

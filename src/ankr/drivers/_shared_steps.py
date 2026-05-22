@@ -5,7 +5,10 @@ Subcommand context: `ankr track` (hip), `ankr sync` (hip), `ankr track-hda`,
 steps with a target_kind flag.
 
 P1.6 Wave 4 scope: hip branch is reachable; hda branch is preserved 1:1 from
-legacy and will be exercised when T4 wires `ankr track-hda` in a later wave.
+legacy and will be unlocked when T4 wires `ankr track-hda` in a later wave.
+Until T4, `target_kind="hda"` raises `NotImplementedError` at each step's
+entry — see `_assert_hda_unwired()` below. T4 removes that helper (single
+deletion) to unblock the hda branch.
 
 NOTE (P1.6 wave 4): the `custom_hda` literals in the hda branches are
 retained — see `_card.py` module note.
@@ -30,6 +33,19 @@ from ._helpers import (
 from ._card import prepare_card_step
 
 
+def _assert_hda_unwired(target_kind: str) -> None:
+    """Gate the hda branch until T4 wires `_hda` driver + `ankr track-hda`.
+
+    Removed in one line when T4 lands. See module docstring.
+    """
+    if target_kind == "hda":
+        raise NotImplementedError(
+            "target_kind='hda' is deferred to P1.6 T4 (ankr track-hda + _hda "
+            "driver). The hda branch in _shared_steps is preserved 1:1 from "
+            "legacy but not yet exercised by any wired subcommand."
+        )
+
+
 def _hda_card_bundle_paths(safe: str, card_step: dict) -> list[str]:
     """Build HDA commit bundle path list (shared by step_finalize and sync_hda).
 
@@ -51,6 +67,7 @@ def step_prepare(state: dict, target_kind: str = "hip") -> dict:
     """Step 1: normalize inputs, build dirs, compute segments_index, hda_deps, hda_cache_report."""
     if target_kind not in ("hip", "hda"):
         raise ValueError(f"unknown target_kind: {target_kind}")
+    _assert_hda_unwired(target_kind)
 
     docs_root: Path = state["docs_root"]
     chain: list[dict] = state["chain"]
@@ -127,6 +144,7 @@ def step_render(state: dict, target_kind: str = "hip") -> dict:
     """Step 2: render segment .md files, skeleton.md, dataflow.md, build narrative_review."""
     if target_kind not in ("hip", "hda"):
         raise ValueError(f"unknown target_kind: {target_kind}")
+    _assert_hda_unwired(target_kind)
     enriched: list[dict] = state["enriched"]
     narratives: dict = state["narratives"]
     chain: list[dict] = state["chain"]
@@ -223,6 +241,7 @@ def step_manifest(state: dict, target_kind: str = "hip") -> dict:
     """Step 3: load/create manifest, upsert nodes, save, rebuild used_by, prepare card."""
     if target_kind not in ("hip", "hda"):
         raise ValueError(f"unknown target_kind: {target_kind}")
+    _assert_hda_unwired(target_kind)
 
     docs_root: Path = state["docs_root"]
     endnode_name: str = state["endnode_name"]
@@ -358,6 +377,7 @@ def step_finalize(state: dict, target_kind: str = "hip") -> dict:
     """Step 4: assemble commit bundle and final result dict."""
     if target_kind not in ("hip", "hda"):
         raise ValueError(f"unknown target_kind: {target_kind}")
+    _assert_hda_unwired(target_kind)
 
     docs_root: Path = state["docs_root"]
     endnode_name: str = state["endnode_name"]

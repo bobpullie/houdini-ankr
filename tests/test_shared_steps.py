@@ -38,3 +38,15 @@ def test_shared_steps_rejects_unknown_target_kind(tmp_path):
     for fn in (step_prepare, step_render, step_manifest, step_finalize):
         with pytest.raises(ValueError, match="unknown target_kind"):
             fn(state, target_kind="foo")
+
+
+def test_shared_steps_hda_target_is_gated_until_t4(tmp_path):
+    """Each step function raises NotImplementedError when target_kind='hda'.
+
+    The gate is removed by P1.6 T4 when `_hda` driver lands. Until then,
+    the hda branch must not run from any reachable code path.
+    """
+    state = _make_minimal_hip_state(tmp_path)
+    for fn in (step_prepare, step_render, step_manifest, step_finalize):
+        with pytest.raises(NotImplementedError, match="P1.6 T4"):
+            fn(state, target_kind="hda")

@@ -483,7 +483,8 @@ class TestCardIntegrationHip:
         )
         assert result["card_step"]["status"] == "skipped"
 
-    def test_sync_with_changes_calls_card(self, tmp_path):
+    def test_sync_with_changes_calls_card(self, tmp_path, mock_card_step):
+        hip_mock, _shared_mock = mock_card_step
         docs = tmp_path / "docs"
         first_track(
             endnode_path="/obj/KH_terrain/OUT_KH",
@@ -496,6 +497,8 @@ class TestCardIntegrationHip:
             hashes_with_flags=_simple_hwf(),
             docs_root=docs,
         )
+        # Reset hip-site recorder so we only count the sync-time call below.
+        hip_mock.reset_mock()
         changed_hwf = _simple_hwf()
         changed_hwf["/obj/KH_terrain/kh_terrain"]["hash"] = "h_changed"
         result = sync_endnode(
@@ -506,8 +509,12 @@ class TestCardIntegrationHip:
             narratives=_simple_narratives(),
             docs_root=docs,
         )
-        assert result["card_step"]["status"] == "skipped"  # mock but key exists
+        assert result["card_step"]["status"] == "skipped"  # mock return
         assert len(result["diff"]["changed"]) > 0
+        # Non-tautological: decision logic in _hip.py must have invoked
+        # prepare_card_step (changes > 0), not short-circuited to no_changes.
+        assert hip_mock.called, "prepare_card_step should be called when total_changes > 0"
+        assert hip_mock.call_args.kwargs["target_kind"] == "hip"
 
     def test_previous_sync_rotated_on_sync(self, tmp_path, monkeypatch):
         import ankr.drivers._shared_steps as _shared_steps_mod

@@ -9,7 +9,6 @@ Phase 1+ will add: `check`, `track`, `sync`, `scan`, `split`, `collapse`,
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import typer
@@ -58,7 +57,6 @@ def _build_config_dict(
     project_root: Path,
     docs_root: str,
     houdini_version_hint: str | None,
-    interactive: bool,
 ) -> dict:
     """Construct the YAML payload — keep keys in user-friendly order."""
     return {
@@ -149,14 +147,25 @@ def init(
     repair: bool = typer.Option(
         False,
         "--repair",
-        help="Re-write config preserving any explicitly provided values; same effect as --force for now.",
+        help="Update existing config: preserve unspecified keys; only overwrite "
+             "values explicitly supplied via flags (or filled in by prompt).",
     ),
 ) -> None:
     """Scaffold an `ankr.config.yaml` in the target project root.
 
     Flag-driven first; any required value not provided is prompted interactively
     unless `--no-interactive` is set.
+
+    --force vs --repair:
+      --force: discard existing file entirely; write a fresh default config.
+      --repair: load existing file; only overwrite keys for values you
+                explicitly supplied (project-name, docs-root, houdini-version).
+                Hand-edited keys you didn't touch on the command line are
+                preserved.
     """
+    if force and repair:
+        typer.secho("--force and --repair are mutually exclusive.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
     interactive = not no_interactive
 
     resolved_root = (project_root or _default_project_root()).expanduser().resolve()
@@ -184,8 +193,33 @@ def init(
         project_root=resolved_root,
         docs_root=docs,
         houdini_version_hint=houdini_version_hint,
-        interactive=interactive,
     )
+
+    # --repair: merge over the existing file rather than overwriting it.
+    # We only carry forward values the user *explicitly* supplied at the
+    # CLI (or via prompt) for the three repair-relevant keys; everything
+    # else is preserved verbatim from disk.
+    if repair and target.exists():
+        try:
+            with target.open("r", encoding="utf-8") as f:
+                existing = yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            typer.secho(f"Cannot --repair: existing {CONFIG_FILENAME} has YAML errors: {e}",
+                        fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2)
+        existing.setdefault("project", {})
+        existing.setdefault("docs", {})
+        existing.setdefault("houdini", {})
+        if project_name is not None:
+            existing["project"]["name"] = name
+        if docs_root is not None:
+            existing["docs"]["root"] = docs
+        if houdini_version_hint is not None:
+            existing["houdini"]["version_hint"] = houdini_version_hint
+        # project.root is always refreshed to the resolved root since it
+        # encodes the install location and would otherwise rot on move.
+        existing["project"]["root"] = str(resolved_root)
+        payload = existing
 
     # Validate before writing — fail fast if our own builder produces a bad dict.
     AnkrConfig.model_validate(payload)
@@ -281,4 +315,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    sys.exit(0)

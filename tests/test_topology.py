@@ -250,23 +250,38 @@ def test_i9_passes_for_canonical_layout(tmp_path: Path) -> None:
     assert check_i9_path_layout(cfg, scan) == []
 
 
-def test_i9_flags_hda_not_under_hda_subdir(tmp_path: Path) -> None:
-    # HDA placed at <docs>/foo__1.0/ — should be under custom_hda/.
-    # We achieve this by creating a unit that the scanner treats as hip but config calls hda by frontmatter.
-    # Simpler test: misconfigure hda_subdir so existing layout becomes wrong.
+def test_i9_passes_for_hip_outside_hda_subdir(tmp_path: Path) -> None:
+    """When hip_subdir is empty, a hip endnode at <docs>/<hipname>/<endnode>/
+    (depth 2) is canonical and must NOT trigger I9.
+    """
     cfg = _cfg(
         tmp_path,
         docs={"root": "docs/ankr", "hda_subdir": "wrong_dir_name"},
     )
     docs = paths.docs_root(cfg)
-    # Put HDA in custom_hda anyway — scanner won't find it as HDA (since hda_dir = wrong_dir_name).
-    # Instead, create something at the actual hda_dir that's malformed.
-    _make_hda(docs, "weird__1.0")  # creates custom_hda/weird__1.0 — scanner sees it as hip endnode
+    _make_hda(docs, "weird__1.0")  # scanner sees this as a hip unit (depth 2)
     scan = scan_kb(cfg)
-    # With hda_subdir = wrong_dir_name, this becomes a hip unit (no hda detection).
-    # I9 should still pass for hip layout (empty hip_subdir). Test serves as path-flexibility check.
+    assert check_i9_path_layout(cfg, scan) == []
+
+
+def test_i9_flags_hip_at_wrong_depth_when_hip_subdir_empty(tmp_path: Path) -> None:
+    """When hip_subdir is empty, a unit at depth != 2 must be flagged."""
+    cfg = _cfg(tmp_path)
+    docs = paths.docs_root(cfg)
+    # Place a unit at depth 1 (just under docs): docs/orphan_unit/
+    bad = docs / "orphan_unit"
+    (bad / "segments").mkdir(parents=True)
+    (bad / "skeleton.md").write_text(
+        "---\nendnode: /obj/x\nlast_sync: 2026-05-22\n---\n# x\n",
+        encoding="utf-8",
+    )
+    (bad / "segments" / "seg_01_a.md").write_text(
+        "---\nsegment_id: seg_01_a\n---\n# a\n",
+        encoding="utf-8",
+    )
+    scan = scan_kb(cfg)
     violations = check_i9_path_layout(cfg, scan)
-    assert all(v.severity == Severity.CRITICAL for v in violations) or violations == []
+    assert any(v.invariant_id == "I9" and "depth" in v.message for v in violations)
 
 
 def test_i9_enforces_hip_subdir_when_set(tmp_path: Path) -> None:

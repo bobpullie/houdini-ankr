@@ -14,6 +14,17 @@ backend, and the cook-level geometry baseline snapshot used by regression
 verification. Pure-Python helpers (`is_vendor_hda_namespace`,
 `extract_external_refs`) remain `hou`-free so drivers/tests can call them
 without a session.
+
+G3 (Read-only on Houdini scenes) — narrow carve-out for `walk_hda_definition`:
+the HDA walker must instantiate the target user HDA inside the live session to
+walk its internal cook chain (there is no public Houdini API to enumerate an
+HDA definition's internal graph without an unlocked instance). The walker
+therefore (a) creates a temp `/obj/_ankr_walker_*` container, (b) snapshots
+the hip's dirty flag before the operation and restores it in `finally`, and
+(c) reports cleanup failures in `result["errors"]` so the caller can surface
+them. The net effect: even if cleanup fails, the hip's dirty flag is restored
+to its pre-walk state — a subsequent autosave will NOT commit ANKR-induced
+changes. No other function in this module mutates scene state.
 """
 
 
@@ -87,7 +98,8 @@ def compute_hashes_for_paths(paths: list) -> dict:
 
 
 # Vendor HDA namespaces — treat as black boxes (Plan 1 + permanent rule per user feedback).
-VENDOR_HDA_NAMESPACES = {"sidefx", "labs", "kinefx", "chop"}
+# Note: `chop` is a Houdini context, not a vendor — removed (S49 audit).
+VENDOR_HDA_NAMESPACES = {"sidefx", "labs", "kinefx"}
 
 
 def is_vendor_hda(node) -> bool:
@@ -169,10 +181,7 @@ def extract_segment_nodes(paths: list) -> list:
     VEX reads/writes/groups/random_seeds are extracted via vex_analyzer when applicable.
     """
     import hou
-    try:
-        from . import vex_analyzer as va
-    except Exception:
-        import vex_analyzer as va  # fallback when run standalone
+    from . import vex_analyzer as va
 
     # --- Houdini parm default detection ---
     def _is_default(parm) -> bool:
@@ -498,6 +507,14 @@ def walk_hda_definition(hda_type: str) -> dict:
 
     Plan 2 Task C §3.
 
+    G3 carve-out: this is the single function in `hou_runtime` that
+    mutates scene state (creates `/obj/_ankr_walker_*`, instantiates
+    the HDA inside it, destroys both in `finally`). The hip's dirty
+    flag is snapshotted before the operation and restored after, so
+    a subsequent autosave will not commit ANKR-induced changes even
+    if cleanup fails. Cleanup failures are reported in
+    `result["errors"]` rather than silently swallowed.
+
     Returns:
         {
             "hda_type": str,
@@ -546,8 +563,16 @@ def walk_hda_definition(hda_type: str) -> dict:
         except Exception:
             mtime = 0.0
 
-    # 2. Temp container with collision-resistant tag
-    tag = f"hda_walker_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+    # G3 carve-out: snapshot hip dirty flag before any scene mutation, so we
+    # can restore it in `finally` regardless of cleanup outcome.
+    try:
+        hip_was_dirty = bool(hou.hipFile.hasUnsavedChanges())
+    except Exception:
+        hip_was_dirty = True  # safer default: assume dirty and leave dirty
+
+    # 2. Temp container with collision-resistant tag (_ankr_ prefix so any
+    # leaked container is greppable by the user).
+    tag = f"_ankr_walker_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     parent = hou.node("/obj").createNode("geo", tag)
     try:
         parent.setDisplayFlag(False)
@@ -623,11 +648,25 @@ def walk_hda_definition(hda_type: str) -> dict:
             f"walker exception: {type(e).__name__}: {e}"
         )
     finally:
-        # 9. ALWAYS clean up temp container
+        # 9. ALWAYS clean up temp container. Report failure rather than
+        # swallow — a leaked `/obj/_ankr_walker_*` container in the user's
+        # hip is something the caller needs to know about.
         try:
             parent.destroy()
-        except Exception:
-            pass
+        except Exception as e:
+            result["errors"].append(
+                f"cleanup failed (leaked node {parent.path() if parent else '?'}):"
+                f" {type(e).__name__}: {e}"
+            )
+        # G3 carve-out: restore hip dirty flag so autosave doesn't commit
+        # the temp-node round-trip. Best effort — failure is non-fatal but
+        # surfaced.
+        try:
+            hou.hipFile.setHasUnsavedChanges(hip_was_dirty)
+        except Exception as e:
+            result["errors"].append(
+                f"hip dirty-flag restore failed: {type(e).__name__}: {e}"
+            )
 
     return result
 

@@ -213,3 +213,92 @@ class TestExtractLandmarkInputs:
 
         result = extract_landmark_inputs(["/obj/geo/nonexistent"])
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# Smoke coverage for previously-unverified public surface
+# ---------------------------------------------------------------------------
+
+
+def _fake_parm(name="x", value=0.0, is_default=True, expression=None):
+    p = types.SimpleNamespace()
+    p.name = lambda: name
+    p.isAtDefault = lambda: is_default
+    p.rawValue = lambda: expression if expression else str(value)
+    p.unexpandedString = lambda: expression if expression else str(value)
+    p.eval = lambda: value
+    return p
+
+
+def _fake_node(name="n", type_name="null", path="/obj/g/n", parent_input=None):
+    n = types.SimpleNamespace()
+    n.name = lambda: name
+    n.path = lambda: path
+    t = types.SimpleNamespace()
+    t.name = lambda: type_name
+    t.nameComponents = lambda: ("", "", type_name, "")
+    t.definition = lambda: None
+    n.type = lambda: t
+    n.parms = lambda: []
+    n.parm = lambda _k: None
+    n.isBypassed = lambda: False
+    n.isHidden = lambda: False
+    n.isLocked = lambda: False
+    n.isInsideLockedHDA = lambda: False
+    n.isTemplateFlagSet = lambda: False
+    n.isDisplayFlagSet = lambda: False
+    n.isRenderFlagSet = lambda: False
+    n.inputs = lambda: ()
+    n.allSubChildren = lambda: []
+    return n
+
+
+class TestComputeHashes:
+    def test_compute_hashes_for_paths_skips_missing(self, _fake_hou):
+        node = _fake_node()
+        _fake_hou.node = lambda p: node if p == "/obj/g/n" else None
+        from ankr.hou_runtime import compute_hashes_for_paths
+        result = compute_hashes_for_paths(["/obj/g/n", "/obj/g/missing"])
+        assert "/obj/g/n" in result
+        assert "/obj/g/missing" not in result
+        assert isinstance(result["/obj/g/n"], str)
+        assert len(result["/obj/g/n"]) == 64  # sha256 hex
+
+    def test_compute_subtree_hashes_requires_real_node(self, _fake_hou):
+        _fake_hou.node = lambda p: None
+        from ankr.hou_runtime import compute_subtree_hashes
+        with pytest.raises(ValueError, match="node not found"):
+            compute_subtree_hashes("/obj/missing")
+
+
+class TestVendorNamespaceConstant:
+    def test_chop_no_longer_in_vendor_set(self):
+        """Audit S49: `chop` is a context, not a vendor — removed."""
+        from ankr.hou_runtime import VENDOR_HDA_NAMESPACES
+        assert "chop" not in VENDOR_HDA_NAMESPACES
+        # Other vendor namespaces must remain.
+        assert {"sidefx", "labs", "kinefx"}.issubset(VENDOR_HDA_NAMESPACES)
+
+
+class TestWalkHdaDefinitionEarlyExit:
+    """walk_hda_definition early-return paths (unknown type / no definition).
+
+    These paths run BEFORE the G3 carve-out's snapshot/restore, so the
+    dirty flag must remain untouched by definition. A full integration
+    test of the snapshot/restore path requires a real Houdini session
+    and is intentionally not faked here — the contract is documented in
+    the module docstring.
+    """
+
+    def test_unknown_type_returns_error_without_touching_scene(self, _fake_hou):
+        sop_cat = types.SimpleNamespace(nodeType=lambda _t: None)
+        _fake_hou.sopNodeTypeCategory = lambda: sop_cat
+        # If the walker accidentally proceeded past the early exit, it would
+        # call hou.node("/obj") — wire a sentinel that raises so we'd notice.
+        _fake_hou.node = lambda p: (_ for _ in ()).throw(
+            AssertionError(f"walker should not touch /obj on unknown-type path; got {p}")
+        )
+        from ankr.hou_runtime import walk_hda_definition
+        result = walk_hda_definition("acme::nope::1.0")
+        assert result["hda_type"] == "acme::nope::1.0"
+        assert any("unknown type" in e for e in result["errors"])

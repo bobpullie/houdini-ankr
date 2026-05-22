@@ -90,6 +90,50 @@ def test_check_json_output(runner: CliRunner, tmp_path: Path) -> None:
     assert payload["units"] == []
 
 
+def test_init_repair_preserves_hand_edited_keys(runner: CliRunner, tmp_path: Path) -> None:
+    """--repair must keep keys the user didn't touch on the command line.
+
+    Locks the contract that --repair is NOT --force-by-another-name.
+    """
+    import yaml as _yaml
+    first = runner.invoke(
+        app,
+        ["init", "--project-root", str(tmp_path), "--name", "demo", "--no-interactive"],
+    )
+    assert first.exit_code == 0
+    cfg_path = tmp_path / CONFIG_FILENAME
+    # Simulate a hand edit: add a custom key under hda_search_paths.
+    with cfg_path.open("r", encoding="utf-8") as f:
+        data = _yaml.safe_load(f)
+    data["hda_search_paths"] = ["${HOUDINI_USER_PREF_DIR}/otls"]
+    data["hooks"]["enable_drift_reminder"] = False
+    with cfg_path.open("w", encoding="utf-8") as f:
+        _yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+    # Now --repair, only changing project name.
+    repair = runner.invoke(
+        app,
+        ["init", "--project-root", str(tmp_path), "--name", "renamed",
+         "--no-interactive", "--repair"],
+    )
+    assert repair.exit_code == 0, repair.stdout
+    with cfg_path.open("r", encoding="utf-8") as f:
+        after = _yaml.safe_load(f)
+    assert after["project"]["name"] == "renamed"
+    # Hand-edited keys must survive.
+    assert after["hda_search_paths"] == ["${HOUDINI_USER_PREF_DIR}/otls"]
+    assert after["hooks"]["enable_drift_reminder"] is False
+
+
+def test_init_force_and_repair_mutually_exclusive(runner: CliRunner, tmp_path: Path) -> None:
+    runner.invoke(app, ["init", "--project-root", str(tmp_path), "--name", "x", "--no-interactive"])
+    result = runner.invoke(
+        app,
+        ["init", "--project-root", str(tmp_path), "--name", "y",
+         "--no-interactive", "--force", "--repair"],
+    )
+    assert result.exit_code == 2
+
+
 def test_init_with_houdini_version_hint(runner: CliRunner, tmp_path: Path) -> None:
     result = runner.invoke(
         app,
